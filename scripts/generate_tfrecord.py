@@ -16,6 +16,10 @@ optional arguments:
                         Path of output .csv file. If none provided, then no file will be written.
 """
 
+from collections import namedtuple
+from object_detection.utils import dataset_util, label_map_util
+from PIL import Image
+import tensorflow.compat.v1 as tf
 import os
 import glob
 import pandas as pd
@@ -24,10 +28,6 @@ import xml.etree.ElementTree as ET
 import argparse
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'    # Suppress TensorFlow logging (1)
-import tensorflow.compat.v1 as tf
-from PIL import Image
-from object_detection.utils import dataset_util, label_map_util
-from collections import namedtuple
 
 # Initiate argument parser
 parser = argparse.ArgumentParser(
@@ -80,6 +80,7 @@ def xml_to_csv(path):
     for xml_file in glob.glob(path + '/*.xml'):
         tree = ET.parse(xml_file)
         root = tree.getroot()
+        value = None
         for member in root.findall('object'):
             bndbox = member.find('bndbox')
             value = (root.find('filename').text,
@@ -90,6 +91,17 @@ def xml_to_csv(path):
                      int(bndbox.find('ymin').text),
                      int(bndbox.find('xmax').text),
                      int(bndbox.find('ymax').text)
+                     )
+            xml_list.append(value)
+        if value is None:
+            value = (root.find('filename').text,
+                     int(root.find('size')[0].text),
+                     int(root.find('size')[1].text),
+                     '-1',
+                     '-1',
+                     '-1',
+                     '-1',
+                     '-1'
                      )
             xml_list.append(value)
     column_name = ['filename', 'width', 'height',
@@ -125,12 +137,13 @@ def create_tf_example(group, path):
     classes = []
 
     for index, row in group.object.iterrows():
-        xmins.append(row['xmin'] / width)
-        xmaxs.append(row['xmax'] / width)
-        ymins.append(row['ymin'] / height)
-        ymaxs.append(row['ymax'] / height)
-        classes_text.append(row['class'].encode('utf8'))
-        classes.append(class_text_to_int(row['class']))
+        if int(row['xmin']) > -1:
+            xmins.append(row['xmin'] / width)
+            xmaxs.append(row['xmax'] / width)
+            ymins.append(row['ymin'] / height)
+            ymaxs.append(row['ymax'] / height)
+            classes_text.append(row['class'].encode('utf8'))
+            classes.append(class_text_to_int(row['class']))
 
     tf_example = tf.train.Example(features=tf.train.Features(feature={
         'image/height': dataset_util.int64_feature(height),
